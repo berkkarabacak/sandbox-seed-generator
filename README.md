@@ -12,6 +12,12 @@
   <img src="docs/hero-board.png" alt="Seedling — generated kanban board preview" width="100%">
 </a>
 
+<br>
+
+<img src="docs/push-demo.gif" alt="Dry-run push console — simulated REST pipeline filling up" width="80%">
+
+*The push console: rehearse the whole REST pipeline in dry-run, or write it for real.*
+
 </div>
 
 ## Why
