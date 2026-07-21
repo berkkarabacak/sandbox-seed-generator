@@ -7,6 +7,7 @@
 [![CI](https://github.com/berkkarabacak/sandbox-seed-generator/actions/workflows/ci.yml/badge.svg)](https://github.com/berkkarabacak/sandbox-seed-generator/actions/workflows/ci.yml)
 [![Deploy](https://github.com/berkkarabacak/sandbox-seed-generator/actions/workflows/deploy.yml/badge.svg)](https://github.com/berkkarabacak/sandbox-seed-generator/actions/workflows/deploy.yml)
 [![Live Demo](https://img.shields.io/badge/demo-live-a3e635?style=for-the-badge&logo=githubpages&logoColor=black)](https://berkkarabacak.github.io/sandbox-seed-generator/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-a3e635?style=flat-square)](LICENSE)
 
 <a href="https://berkkarabacak.github.io/sandbox-seed-generator/">
   <img src="docs/hero-board.png" alt="Seedling — generated kanban board preview" width="100%">
