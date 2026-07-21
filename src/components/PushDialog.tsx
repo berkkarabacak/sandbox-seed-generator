@@ -37,6 +37,7 @@ function simulateRun(
   setStepIdx: (i: number) => void,
   setProgress: (p: number) => void,
   finish: (ms: number) => void,
+  pace = 1,
 ): () => void {
   const t0 = performance.now();
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -52,7 +53,7 @@ function simulateRun(
 
   const weights = [1, 2, 2, 5, 3, 1];
   const total = weights.reduce((a, b) => a + b, 0);
-  let delay = 250;
+  let delay = 250 * pace;
   let acc = 0;
 
   const stepLines: string[][] = [
@@ -77,14 +78,14 @@ function simulateRun(
   stepLines.forEach((lines, si) => {
     timers.push(setTimeout(() => { ss(si); p("info", `▸ ${STEP_LABELS[si]}…`); }, delay));
     for (const line of lines) {
-      delay += 80 + Math.random() * 150;
+      delay += (80 + Math.random() * 150) * pace;
       const l = line;
       timers.push(setTimeout(() => p(/✓|201|OK/.test(l) ? "ok" : "info", `  ${l}`), delay));
     }
     acc += weights[si];
     const target = Math.round((acc / total) * 100);
     timers.push(setTimeout(() => sp(target), delay));
-    delay += 180;
+    delay += 180 * pace;
   });
 
   timers.push(
@@ -92,7 +93,7 @@ function simulateRun(
       const totalIssues = dataset.projects.reduce((s, pr) => s + pr.issues.length, 0);
       p("ok", `✔ Seeded ${dataset.projects.length} projects · ${totalIssues} issues (simulated).`);
       fin(Math.round(performance.now() - t0));
-    }, delay + 300),
+    }, delay + 300 * pace),
   );
 
   return () => {
@@ -157,11 +158,13 @@ export function PushDialog({
     stopRef.current = false;
 
     if (mode === "dry-run") {
+      // ?pace=slow stretches the simulation out — handy for demos and recordings
+      const pace = new URLSearchParams(window.location.search).get("pace") === "slow" ? 2.8 : 1;
       simulateRun(dataset, site, pushLine, setStepIdx, setProgress, (ms) => {
         setPhase("done");
         setStepIdx(STEP_LABELS.length);
         onComplete(ms, "dry-run");
-      });
+      }, pace);
       return;
     }
 
