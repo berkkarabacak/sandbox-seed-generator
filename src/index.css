@@ -1,0 +1,97 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 150 9% 4.5%;
+    --foreground: 120 8% 92%;
+    --card: 150 7% 7%;
+    --card-foreground: 120 8% 92%;
+    --popover: 150 8% 6%;
+    --popover-foreground: 120 8% 92%;
+    --primary: 84 81% 56%;
+    --primary-foreground: 90 60% 8%;
+    --secondary: 150 5% 12%;
+    --secondary-foreground: 120 8% 92%;
+    --muted: 150 5% 12%;
+    --muted-foreground: 140 6% 55%;
+    --accent: 84 40% 16%;
+    --accent-foreground: 84 81% 70%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 150 6% 14%;
+    --input: 150 6% 16%;
+    --ring: 84 81% 56%;
+    --radius: 0.65rem;
+    --sidebar-background: 150 7% 6%;
+    --sidebar-foreground: 120 8% 92%;
+    --sidebar-primary: 84 81% 56%;
+    --sidebar-primary-foreground: 90 60% 8%;
+    --sidebar-accent: 150 5% 12%;
+    --sidebar-accent-foreground: 120 8% 92%;
+    --sidebar-border: 150 6% 14%;
+    --sidebar-ring: 84 81% 56%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Inter", system-ui, sans-serif;
+  }
+  code, kbd, .mono {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+  }
+}
+
+@layer utilities {
+  .font-mono2 {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, hsl(150 6% 10% / 0.55) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(150 6% 10% / 0.55) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+  .glow-primary {
+    box-shadow: 0 0 24px hsl(84 81% 56% / 0.16), 0 0 4px hsl(84 81% 56% / 0.28);
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(150 6% 20%);
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Subtle entrance for generated content */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise {
+  animation: rise 0.35s ease both;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}

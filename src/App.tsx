@@ -1,0 +1,234 @@
+import { useDeferredValue, useMemo, useState } from "react";
+import {
+  Braces,
+  Bug,
+  Columns3,
+  FolderKanban,
+  History,
+  MessageSquare,
+  Rocket,
+  Sprout,
+  Users,
+  Zap,
+} from "lucide-react";
+import type { Dataset, GenIssue, JiraConnection, JobRecord } from "@/types";
+import { DEFAULT_CONFIG, datasetStats, generateDataset } from "@/lib/generator";
+import { ConnectionCard } from "@/components/ConnectionCard";
+import { RecipePanel } from "@/components/RecipePanel";
+import { BoardView } from "@/components/BoardView";
+import { IssueTable } from "@/components/IssueTable";
+import { InsightsView } from "@/components/InsightsView";
+import { IssueDetailDialog } from "@/components/IssueDetailDialog";
+import { PushDialog } from "@/components/PushDialog";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+
+function StatPill({ icon: Icon, label, value, tone }: { icon: typeof Zap; label: string; value: number | string; tone: string }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg border border-border/70 bg-card/70 px-3.5 py-2">
+      <span className={cn("flex h-7 w-7 items-center justify-center rounded-md", tone)}>
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <span>
+        <span className="block font-mono2 text-sm font-bold leading-none">{value}</span>
+        <span className="block text-[9.5px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+      </span>
+    </div>
+  );
+}
+
+function exportJson(dataset: Dataset) {
+  const payload = {
+    meta: {
+      generator: "seedling · sandbox seed-data generator",
+      generatedAt: dataset.generatedAt.toISOString(),
+      scenario: dataset.scenario,
+      domain: dataset.domain,
+    },
+    people: dataset.people,
+    projects: dataset.projects,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `seed-data-${dataset.scenario}-${dataset.domain}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export default function App() {
+  const [cfg, setCfg] = useState(DEFAULT_CONFIG);
+  const [conn, setConn] = useState<JiraConnection>({
+    site: "acme-sandbox.atlassian.net",
+    email: "demo@acme.dev",
+    token: "",
+  });
+  const deferredCfg = useDeferredValue(cfg);
+  const dataset = useMemo(() => generateDataset(deferredCfg), [deferredCfg]);
+  const stats = useMemo(() => datasetStats(dataset), [dataset]);
+
+  const [openIssue, setOpenIssue] = useState<GenIssue | null>(null);
+  const [pushOpen, setPushOpen] = useState(false);
+  const [jobs, setJobs] = useState<JobRecord[]>([]);
+  const [projectTab, setProjectTab] = useState(0);
+
+  const project = dataset.projects[Math.min(projectTab, dataset.projects.length - 1)];
+
+  return (
+    <div className="bg-grid flex h-screen flex-col overflow-hidden bg-background">
+      {/* ── Header ─────────────────────────────────────────────── */}
+      <header className="flex items-center gap-3 border-b border-border/80 bg-card/60 px-5 py-3 backdrop-blur">
+        <span className="glow-primary flex h-9 w-9 items-center justify-center rounded-lg bg-lime-400">
+          <Sprout className="h-5 w-5 text-black" />
+        </span>
+        <div>
+          <h1 className="text-[15px] font-extrabold leading-tight tracking-tight">
+            Seedling
+            <span className="ml-2 font-mono2 text-[10px] font-medium text-lime-300/80">v0.9 beta</span>
+          </h1>
+          <p className="text-[11px] text-muted-foreground">
+            Sandbox seed-data generator · realistic fake projects & issues for Jira Cloud demos and UAT
+          </p>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => exportJson(dataset)}>
+            <Braces className="h-3.5 w-3.5" />
+            Export JSON
+          </Button>
+          <Button
+            size="sm"
+            className="glow-primary h-8 gap-1.5 bg-lime-400 text-xs font-bold text-black hover:bg-lime-300"
+            onClick={() => setPushOpen(true)}
+          >
+            <Rocket className="h-3.5 w-3.5" />
+            Generate & push to Jira
+          </Button>
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        {/* ── Left rail ────────────────────────────────────────── */}
+        <aside className="scrollbar-thin w-[380px] shrink-0 space-y-3 overflow-y-auto border-r border-border/80 p-3">
+          <ConnectionCard conn={conn} onChange={setConn} />
+          <RecipePanel cfg={cfg} onChange={setCfg} />
+
+          {/* job history */}
+          <div className="rounded-lg border border-border/80 bg-card/80 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold">
+              <History className="h-3.5 w-3.5 text-muted-foreground" />
+              Recent runs
+            </div>
+            {jobs.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground/70">
+                Nothing pushed yet — dry-runs and live pushes land here.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {jobs.slice(0, 5).map((j) => (
+                  <div key={j.id} className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-[11px]">
+                    <span className="font-mono2 text-lime-300">{j.projects} proj</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="font-mono2 text-sky-300">{j.issues} issues</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="font-mono2 text-violet-300">{j.comments} cmt</span>
+                    <span
+                      className={cn(
+                        "ml-auto rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase",
+                        j.mode === "live" ? "bg-rose-400/10 text-rose-300" : "bg-amber-400/10 text-amber-300",
+                      )}
+                    >
+                      {j.mode}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* ── Main ─────────────────────────────────────────────── */}
+        <main className="flex min-w-0 flex-1 flex-col gap-3 p-4">
+          {/* stats strip */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <StatPill icon={FolderKanban} label="Projects" value={dataset.projects.length} tone="bg-violet-500/15 text-violet-300" />
+            <StatPill icon={Zap} label="Issues" value={stats.issues} tone="bg-lime-400/15 text-lime-300" />
+            <StatPill icon={Bug} label="Bugs" value={stats.byType.bug} tone="bg-rose-500/15 text-rose-300" />
+            <StatPill icon={MessageSquare} label="Comments" value={stats.comments} tone="bg-sky-500/15 text-sky-300" />
+            <StatPill icon={Users} label="Personas" value={dataset.people.length} tone="bg-amber-500/15 text-amber-300" />
+            <span className="ml-auto hidden items-center gap-1.5 font-mono2 text-[10px] text-muted-foreground lg:flex">
+              <Columns3 className="h-3 w-3" />
+              seed #{deferredCfg.seed} · {deferredCfg.scenario} · {deferredCfg.domain}
+            </span>
+          </div>
+
+          {/* project tabs */}
+          {dataset.projects.length > 1 && (
+            <div className="flex gap-1.5">
+              {dataset.projects.map((p, i) => (
+                <button
+                  key={p.key}
+                  onClick={() => setProjectTab(i)}
+                  className={cn(
+                    "rounded-md border px-3 py-1.5 text-[11px] font-semibold transition-colors",
+                    i === projectTab || (projectTab >= dataset.projects.length && i === 0)
+                      ? "border-lime-400/50 bg-lime-400/10 text-lime-200"
+                      : "border-border bg-card/60 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <span className="font-mono2 mr-1.5 text-[10px] opacity-70">{p.key}</span>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* views */}
+          <Tabs defaultValue="board" className="flex min-h-0 flex-1 flex-col">
+            <TabsList className="w-fit bg-card/80">
+              <TabsTrigger value="board" className="text-xs data-[state=active]:bg-lime-400/15 data-[state=active]:text-lime-200">Board</TabsTrigger>
+              <TabsTrigger value="issues" className="text-xs data-[state=active]:bg-lime-400/15 data-[state=active]:text-lime-200">All issues</TabsTrigger>
+              <TabsTrigger value="insights" className="text-xs data-[state=active]:bg-lime-400/15 data-[state=active]:text-lime-200">Insights</TabsTrigger>
+            </TabsList>
+            <div className="mt-2.5 min-h-0 flex-1 rounded-xl border border-border/80 bg-background/50 p-2.5">
+              <TabsContent value="board" className="m-0 h-full data-[state=inactive]:hidden">
+                <BoardView project={project} onOpenIssue={setOpenIssue} />
+              </TabsContent>
+              <TabsContent value="issues" className="m-0 h-full data-[state=inactive]:hidden">
+                <IssueTable project={project} onOpenIssue={setOpenIssue} />
+              </TabsContent>
+              <TabsContent value="insights" className="m-0 h-full data-[state=inactive]:hidden">
+                <InsightsView dataset={dataset} />
+              </TabsContent>
+            </div>
+          </Tabs>
+        </main>
+      </div>
+
+      <IssueDetailDialog issue={openIssue} onClose={() => setOpenIssue(null)} />
+      <PushDialog
+        open={pushOpen}
+        onOpenChange={setPushOpen}
+        dataset={dataset}
+        conn={conn}
+        onComplete={(durationMs, mode) => {
+          const totalComments = dataset.projects.reduce((s, p) => s + p.issues.reduce((a, i) => a + i.comments.length, 0), 0);
+          setJobs((js) => [
+            {
+              id: `job-${Date.now()}`,
+              at: new Date(),
+              site: conn.site,
+              projects: dataset.projects.length,
+              issues: stats.issues,
+              comments: totalComments,
+              mode,
+              durationMs,
+            },
+            ...js,
+          ]);
+        }}
+      />
+    </div>
+  );
+}
