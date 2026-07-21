@@ -1,5 +1,7 @@
 # Seedling · Sandbox Seed-Data Generator
 
+[![CI](https://github.com/berkkarabacak/sandbox-seed-generator/actions/workflows/ci.yml/badge.svg)](https://github.com/berkkarabacak/sandbox-seed-generator/actions/workflows/ci.yml)
+
 Generate realistic fake projects & issues for Jira Cloud sandboxes, demos and UAT —
 then rehearse the push (dry-run) or write it for real (live push via local proxy).
 
