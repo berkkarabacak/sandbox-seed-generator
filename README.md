@@ -32,11 +32,16 @@ Jira Cloud sandbox (live push).
 
 - 🎭 **5 scenario templates** — Scrum, Kanban service team, Bug Bash / QA cycle, IT service desk, product launch
 - 🧠 **6 AI content domains** — fintech, e-commerce, healthcare, dev tools, gaming, logistics
-- 🎛 **Realism knobs** — comment density, history spread, chaos level (blockers & stale work), narrative depth
-- 👥 **Generated team personas** — names, roles, avatars, workload distribution
-- 📋 **Three live previews** — kanban board, filterable issue table, insights charts (type / status / timeline / workload)
+- ✨ **One-click presets** — Executive demo, UAT deep-dive, QA training, Load test (640 issues), Service desk sim
+- 🗂 **Full Jira data model** — epics, sub-tasks, sprints, fix versions, components, story points, labels,
+  due dates, time tracking, watchers & votes, attachments, typed issue links (blocks / duplicates / clones / relates)
+- 👥 **Generated team personas** — names, roles, avatars, timezones, workload distribution
+- 📋 **Five live previews** — kanban board, filterable issue table, insights charts (type / status / timeline /
+  workload / sprint velocity), team directory, activity feed
 - 🖥 **Push console** — stepper + terminal log; dry-run simulation or live push via a zero-dependency local proxy
-- 📦 **Export JSON** — the full dataset as UAT fixtures
+- 🧹 **Sandbox cleanup** — every live push is recorded locally; wipe it from Jira later with one click
+- 📦 **Exports** — dataset JSON, plus **Jira-compatible CSV** per project (ready for Jira's CSV importer)
+- 🔗 **Shareable recipes** — copy a URL with the exact recipe encoded, or save named recipes locally
 - 🔒 **Token stays local** — credentials are relayed per-request by the local proxy, never stored
 
 ## Quick start
