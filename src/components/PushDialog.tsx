@@ -10,7 +10,7 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import type { Dataset, JiraConnection, PushLogLine } from "@/types";
-import { livePush, probeProxy } from "@/lib/jiraClient";
+import { livePush, probeProxy, type LiveResult } from "@/lib/jiraClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -69,7 +69,7 @@ function simulateRun(
     }),
     (() => {
       const c = dataset.projects.reduce((s, pr) => s + pr.issues.reduce((a, i) => a + i.comments.length, 0), 0);
-      const l = dataset.projects.reduce((s, pr) => s + pr.issues.reduce((a, i) => a + i.linkedKeys.length, 0), 0);
+      const l = dataset.projects.reduce((s, pr) => s + pr.issues.reduce((a, i) => a + i.links.length, 0), 0);
       return [`POST /issue/{key}/comment × ${c} → all 201`, `POST /issueLink × ${l} → all 201`];
     })(),
     [`GET /search?jql=project in (${dataset.projects.map((pr) => pr.key).join(",")}) → ${dataset.projects.reduce((s, pr) => s + pr.issues.length, 0)} issues visible`, "Seed data verified ✓"],
@@ -115,7 +115,7 @@ export function PushDialog({
   onOpenChange: (o: boolean) => void;
   dataset: Dataset;
   conn: JiraConnection;
-  onComplete: (durationMs: number, mode: Mode) => void;
+  onComplete: (durationMs: number, mode: Mode, result?: LiveResult) => void;
 }) {
   const [mode, setMode] = useState<Mode>("dry-run");
   const [phase, setPhase] = useState<Phase>("ready");
@@ -191,7 +191,7 @@ export function PushDialog({
       setProgress(100);
       setStepIdx(STEP_LABELS.length);
       setPhase("done");
-      onComplete(Math.round(performance.now() - t0.current), "live");
+      onComplete(Math.round(performance.now() - t0.current), "live", res);
     } catch (err) {
       pushLine("err", `✖ Unexpected failure: ${String(err)}`);
       pushLine("warn", "Is the proxy running? Start it with: npm run proxy");

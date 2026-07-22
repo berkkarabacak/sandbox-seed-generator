@@ -1,27 +1,44 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
+  Activity,
   Braces,
   Bug,
   Columns3,
+  Download,
+  FileSpreadsheet,
   FolderKanban,
   History,
   MessageSquare,
   Rocket,
   Sprout,
+  Trash2,
   Users,
   Zap,
 } from "lucide-react";
-import type { Dataset, GenIssue, JiraConnection, JobRecord } from "@/types";
+import type { GenIssue, JiraConnection, JobRecord } from "@/types";
 import { DEFAULT_CONFIG, datasetStats, generateDataset } from "@/lib/generator";
+import { exportJiraCsv, exportJson } from "@/lib/exporters";
+import { addPushRecord, configFromHash, loadPushRecords, removePushRecord, type PushRecord } from "@/lib/recipes";
 import { ConnectionCard } from "@/components/ConnectionCard";
 import { RecipePanel } from "@/components/RecipePanel";
 import { BoardView } from "@/components/BoardView";
 import { IssueTable } from "@/components/IssueTable";
 import { InsightsView } from "@/components/InsightsView";
+import { TeamView } from "@/components/TeamView";
+import { ActivityView } from "@/components/ActivityView";
 import { IssueDetailDialog } from "@/components/IssueDetailDialog";
 import { PushDialog } from "@/components/PushDialog";
+import { CleanupDialog } from "@/components/CleanupDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 function StatPill({ icon: Icon, label, value, tone }: { icon: typeof Zap; label: string; value: number | string; tone: string }) {
@@ -38,28 +55,8 @@ function StatPill({ icon: Icon, label, value, tone }: { icon: typeof Zap; label:
   );
 }
 
-function exportJson(dataset: Dataset) {
-  const payload = {
-    meta: {
-      generator: "seedling · sandbox seed-data generator",
-      generatedAt: dataset.generatedAt.toISOString(),
-      scenario: dataset.scenario,
-      domain: dataset.domain,
-    },
-    people: dataset.people,
-    projects: dataset.projects,
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `seed-data-${dataset.scenario}-${dataset.domain}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function App() {
-  const [cfg, setCfg] = useState(DEFAULT_CONFIG);
+  const [cfg, setCfg] = useState(() => configFromHash() ?? DEFAULT_CONFIG);
   const [conn, setConn] = useState<JiraConnection>({
     site: "acme-sandbox.atlassian.net",
     email: "demo@acme.dev",
@@ -73,6 +70,15 @@ export default function App() {
   const [pushOpen, setPushOpen] = useState(false);
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [projectTab, setProjectTab] = useState(0);
+  const [pushes, setPushes] = useState<PushRecord[]>(loadPushRecords);
+  const [cleanupTarget, setCleanupTarget] = useState<PushRecord | null>(null);
+
+  // clear the share hash after applying it so later edits aren't confusing
+  useEffect(() => {
+    if (window.location.hash.startsWith("#r=")) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   const project = dataset.projects[Math.min(projectTab, dataset.projects.length - 1)];
 
@@ -86,17 +92,40 @@ export default function App() {
         <div>
           <h1 className="text-[15px] font-extrabold leading-tight tracking-tight">
             Seedling
-            <span className="ml-2 font-mono2 text-[10px] font-medium text-lime-300/80">v0.9 beta</span>
+            <span className="ml-2 font-mono2 text-[10px] font-medium text-lime-300/80">v1.0</span>
           </h1>
           <p className="text-[11px] text-muted-foreground">
             Sandbox seed-data generator · realistic fake projects & issues for Jira Cloud demos and UAT
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => exportJson(dataset)}>
-            <Braces className="h-3.5 w-3.5" />
-            Export JSON
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Whole dataset
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => exportJson(dataset)} className="gap-2 text-xs">
+                <Braces className="h-3.5 w-3.5 text-lime-300" />
+                JSON — all {dataset.projects.length} projects
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Jira CSV import format
+              </DropdownMenuLabel>
+              {dataset.projects.map((p) => (
+                <DropdownMenuItem key={p.key} onClick={() => exportJiraCsv(p)} className="gap-2 text-xs">
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-sky-300" />
+                  CSV — {p.key} ({p.issues.length + p.epics.length} rows)
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             size="sm"
             className="glow-primary h-8 gap-1.5 bg-lime-400 text-xs font-bold text-black hover:bg-lime-300"
@@ -146,6 +175,41 @@ export default function App() {
               </div>
             )}
           </div>
+
+          {/* sandbox cleanup */}
+          {pushes.length > 0 && (
+            <div className="rounded-lg border border-rose-400/25 bg-card/80 p-3">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold">
+                <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+                Jira cleanup
+                <span className="ml-auto font-mono2 text-[9.5px] font-normal text-muted-foreground">
+                  {pushes.length} live push{pushes.length > 1 ? "es" : ""} on record
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {pushes.slice(0, 4).map((r) => (
+                  <div key={r.id} className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-[11px]">
+                    <span className="font-mono2 text-rose-300">{r.projectKeys.join(",")}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="font-mono2 text-sky-300">{r.issueCount} issues</span>
+                    <span className="ml-auto text-[9.5px] text-muted-foreground/70">
+                      {new Date(r.at).toLocaleDateString()}
+                    </span>
+                    <button
+                      onClick={() => setCleanupTarget(r)}
+                      className="rounded p-1 text-muted-foreground transition-colors hover:bg-rose-400/10 hover:text-rose-300"
+                      title="Delete this seed data from Jira"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-[9.5px] leading-snug text-muted-foreground/70">
+                Records persist locally so you can clean the sandbox even days later.
+              </p>
+            </div>
+          )}
         </aside>
 
         {/* ── Main ─────────────────────────────────────────────── */}
@@ -190,6 +254,12 @@ export default function App() {
               <TabsTrigger value="board" className="text-xs data-[state=active]:bg-lime-400/15 data-[state=active]:text-lime-200">Board</TabsTrigger>
               <TabsTrigger value="issues" className="text-xs data-[state=active]:bg-lime-400/15 data-[state=active]:text-lime-200">All issues</TabsTrigger>
               <TabsTrigger value="insights" className="text-xs data-[state=active]:bg-lime-400/15 data-[state=active]:text-lime-200">Insights</TabsTrigger>
+              <TabsTrigger value="team" className="text-xs data-[state=active]:bg-lime-400/15 data-[state=active]:text-lime-200">
+                <Users className="mr-1 h-3 w-3" />Team
+              </TabsTrigger>
+              <TabsTrigger value="activity" className="text-xs data-[state=active]:bg-lime-400/15 data-[state=active]:text-lime-200">
+                <Activity className="mr-1 h-3 w-3" />Activity
+              </TabsTrigger>
             </TabsList>
             <div className="mt-2.5 min-h-0 flex-1 rounded-xl border border-border/80 bg-background/50 p-2.5">
               <TabsContent value="board" className="m-0 h-full data-[state=inactive]:hidden">
@@ -200,6 +270,12 @@ export default function App() {
               </TabsContent>
               <TabsContent value="insights" className="m-0 h-full data-[state=inactive]:hidden">
                 <InsightsView dataset={dataset} />
+              </TabsContent>
+              <TabsContent value="team" className="m-0 h-full data-[state=inactive]:hidden">
+                <TeamView dataset={dataset} />
+              </TabsContent>
+              <TabsContent value="activity" className="m-0 h-full data-[state=inactive]:hidden">
+                <ActivityView dataset={dataset} />
               </TabsContent>
             </div>
           </Tabs>
@@ -212,7 +288,7 @@ export default function App() {
         onOpenChange={setPushOpen}
         dataset={dataset}
         conn={conn}
-        onComplete={(durationMs, mode) => {
+        onComplete={(durationMs, mode, result) => {
           const totalComments = dataset.projects.reduce((s, p) => s + p.issues.reduce((a, i) => a + i.comments.length, 0), 0);
           setJobs((js) => [
             {
@@ -227,7 +303,26 @@ export default function App() {
             },
             ...js,
           ]);
+          if (mode === "live" && result && !result.aborted && result.projectKeys.length > 0) {
+            setPushes(
+              addPushRecord({
+                id: `push-${Date.now()}`,
+                at: Date.now(),
+                site: conn.site.trim().toLowerCase(),
+                projectKeys: result.projectKeys,
+                issueKeys: result.issueKeys,
+                issueCount: result.issuesCreated,
+                commentCount: result.commentsCreated,
+              }),
+            );
+          }
         }}
+      />
+      <CleanupDialog
+        record={cleanupTarget}
+        conn={conn}
+        onClose={() => setCleanupTarget(null)}
+        onRemoved={(id) => setPushes(removePushRecord(id))}
       />
     </div>
   );

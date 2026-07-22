@@ -33,6 +33,30 @@ export type IssueType = "epic" | "story" | "task" | "bug" | "subtask";
 export type IssueStatus = "To Do" | "In Progress" | "In Review" | "Blocked" | "Done";
 export type IssuePriority = "Highest" | "High" | "Medium" | "Low" | "Lowest";
 
+export type IssueLinkType =
+  | "blocks"
+  | "is blocked by"
+  | "relates to"
+  | "duplicates"
+  | "is duplicated by"
+  | "clones"
+  | "is cloned by";
+
+export interface IssueLink {
+  type: IssueLinkType;
+  key: string;
+}
+
+export interface GenAttachment {
+  filename: string;
+  sizeKb: number;
+}
+
+export interface GenVersion {
+  name: string;
+  released: boolean;
+}
+
 export interface Persona {
   id: string;
   name: string;
@@ -65,7 +89,15 @@ export interface GenIssue {
   parentKey: string | null; // set for sub-tasks
   sprint: string | null;
   comments: GenComment[];
-  linkedKeys: string[];
+  links: IssueLink[];
+  fixVersions: string[];
+  components: string[];
+  dueDate: Date | null;
+  estimateMin: number | null;
+  spentMin: number | null;
+  watchers: number;
+  votes: number;
+  attachments: GenAttachment[];
   createdAt: Date;
   resolvedAt: Date | null;
 }
@@ -92,6 +124,8 @@ export interface GenProject {
   description: string;
   epics: GenEpic[];
   sprints: GenSprint[];
+  versions: GenVersion[];
+  components: string[];
   issues: GenIssue[];
 }
 

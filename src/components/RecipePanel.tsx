@@ -1,11 +1,15 @@
-import { Bug, Columns3, Dices, Headset, KanbanSquare, Rocket, SlidersHorizontal } from "lucide-react";
+import { useState } from "react";
+import { Bug, Check, Columns3, Dices, Headset, KanbanSquare, Link2, Rocket, Save, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import type { DetailLevel, DomainId, ScenarioId, SeedConfig } from "@/types";
 import { DOMAINS, SCENARIOS } from "@/lib/domains";
+import { PRESETS, applyPreset } from "@/lib/presets";
+import { deleteRecipe, loadRecipes, saveRecipe, shareUrl } from "@/lib/recipes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -38,6 +42,19 @@ export function RecipePanel({
   onChange: (c: SeedConfig) => void;
 }) {
   const set = <K extends keyof SeedConfig>(k: K, v: SeedConfig[K]) => onChange({ ...cfg, [k]: v });
+  const [recipes, setRecipes] = useState(loadRecipes);
+  const [recipeName, setRecipeName] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const share = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl(cfg));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
 
   return (
     <Card className="border-border/80 bg-card/80">
@@ -45,19 +62,51 @@ export function RecipePanel({
         <CardTitle className="flex items-center gap-2 text-sm font-semibold">
           <SlidersHorizontal className="h-4 w-4 text-lime-400" />
           Seed recipe
-          <Button
-            size="sm"
-            variant="ghost"
-            className="ml-auto h-7 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-lime-300"
-            onClick={() => set("seed", Math.floor(Math.random() * 99999))}
-            title="Re-roll the random seed"
-          >
-            <Dices className="h-3.5 w-3.5" />
-            Shuffle
-          </Button>
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-lime-300"
+              onClick={share}
+              title="Copy a shareable link with this exact recipe"
+            >
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Link2 className="h-3.5 w-3.5" />}
+              {copied ? "Copied" : "Share"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-lime-300"
+              onClick={() => set("seed", Math.floor(Math.random() * 99999))}
+              title="Re-roll the random seed"
+            >
+              <Dices className="h-3.5 w-3.5" />
+              Shuffle
+            </Button>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
+        {/* Presets */}
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Sparkles className="h-3 w-3 text-lime-400" />
+            One-click presets
+          </Label>
+          <div className="flex flex-wrap gap-1.5">
+            {PRESETS.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => onChange(applyPreset(p))}
+                title={p.blurb}
+                className="rounded-full border border-border bg-background/40 px-2.5 py-1 text-[10.5px] font-medium text-muted-foreground transition-colors hover:border-lime-400/50 hover:bg-lime-400/10 hover:text-lime-200"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Scenario */}
         <div className="space-y-2">
           <Label className="text-xs text-muted-foreground">Scenario template</Label>
@@ -168,6 +217,55 @@ export function RecipePanel({
               <Switch id={k} checked={cfg[k]} onCheckedChange={(v) => set(k, v)} className="scale-90" />
             </div>
           ))}
+        </div>
+
+        {/* Saved recipes */}
+        <div className="space-y-2 border-t border-border/60 pt-3">
+          <Label className="text-xs text-muted-foreground">Saved recipes</Label>
+          <div className="flex gap-1.5">
+            <Input
+              value={recipeName}
+              onChange={(e) => setRecipeName(e.target.value)}
+              placeholder="Name this recipe…"
+              className="h-7 flex-1 bg-background/60 text-[11px]"
+              spellCheck={false}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 px-2 text-[11px]"
+              disabled={!recipeName.trim()}
+              onClick={() => {
+                setRecipes(saveRecipe(recipeName.trim(), cfg));
+                setRecipeName("");
+              }}
+            >
+              <Save className="h-3 w-3" />
+              Save
+            </Button>
+          </div>
+          {recipes.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {recipes.map((r) => (
+                <span key={r.name} className="group inline-flex items-center gap-1 rounded-full border border-border bg-background/40 pl-2.5 pr-1 py-0.5 text-[10.5px]">
+                  <button
+                    onClick={() => onChange({ ...r.cfg })}
+                    className="font-medium text-muted-foreground hover:text-lime-200"
+                    title={`Apply "${r.name}"`}
+                  >
+                    {r.name}
+                  </button>
+                  <button
+                    onClick={() => setRecipes(deleteRecipe(r.name))}
+                    className="rounded-full p-0.5 text-muted-foreground/50 hover:text-rose-300"
+                    title="Delete recipe"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

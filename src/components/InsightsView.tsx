@@ -154,6 +154,30 @@ export function InsightsView({ dataset }: { dataset: Dataset }) {
           </div>
         </CardContent>
       </Card>
+
+      {stats.velocity.length > 0 && (
+        <Card className="col-span-2 border-border/70 bg-card/80">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-semibold text-muted-foreground">Sprint velocity — committed vs completed points</CardTitle>
+          </CardHeader>
+          <CardContent className="h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.velocity} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
+                <CartesianGrid stroke="hsl(150 6% 14%)" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 9.5, fill: "hsl(140 6% 55%)" }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 9, fill: "hsl(140 6% 55%)" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: "#e2e8f0" }} cursor={{ fill: "hsl(150 6% 12%)" }} />
+                <Bar dataKey="committed" fill="#64748b" radius={[3, 3, 0, 0]} barSize={16} />
+                <Bar dataKey="completed" fill="#a3e635" radius={[3, 3, 0, 0]} barSize={16} />
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="flex justify-center gap-3 pb-1 text-[10px] text-muted-foreground">
+              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-slate-500" /> committed</span>
+              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-lime-400" /> completed</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

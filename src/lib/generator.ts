@@ -5,6 +5,7 @@ import type {
   GenIssue,
   GenProject,
   GenSprint,
+  GenVersion,
   IssuePriority,
   IssueStatus,
   IssueType,
@@ -91,6 +92,13 @@ function subtaskSummary(rng: Rng, parentSummary: string): string {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+function attachmentName(rng: Rng, d: DomainPack): string {
+  const kind = pick(rng, ["screenshot", "screen-recording", "har-capture", "error-log", "stacktrace", "metrics", "repro-case", "mock-data", "pprof"]);
+  const area = pick(rng, d.areas).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 26);
+  const ext = kind === "screen-recording" ? "webm" : kind === "har-capture" ? "har" : kind === "screenshot" ? "png" : pick(rng, ["log", "txt", "zip", "json"]);
+  return `${kind}-${area || "issue"}.${ext}`;
 }
 
 // ─── Status / priority shaping ────────────────────────────────────────────────
@@ -216,6 +224,14 @@ function genProject(
     doneCount: 0,
   }));
 
+  // Versions (fixVersions) & components
+  const minorMax = int(rng, 2, 4);
+  const versions: GenVersion[] = Array.from({ length: minorMax + 1 }, (_, m) => ({
+    name: `v1.${m}`,
+    released: m < minorMax - 1 || (m === minorMax - 1 && chance(rng, 0.5)),
+  }));
+  const components = sample(rng, d.areas, int(rng, 3, Math.min(6, d.areas.length)));
+
   // Issues
   const issues: GenIssue[] = [];
   const used = new Set<string>();
@@ -268,6 +284,26 @@ function genProject(
       description = `${pick(rng, ["Routine", "Requested by ops.", "Follow-up from retro.", "Spotted during on-call."])} Owned by the ${pick(rng, d.labels)} stream.`;
     }
 
+    const points = cfg.withStoryPoints && (type === "story" || type === "task") ? pick(rng, [1, 2, 3, 5, 8, 13]) : null;
+    const estimateMin =
+      type === "epic"
+        ? null
+        : points != null
+          ? points * int(rng, 60, 120)
+          : type === "subtask"
+            ? bell(rng, 30, 150)
+            : bell(rng, 60, 420);
+    const spentMin =
+      estimateMin == null
+        ? null
+        : done
+          ? Math.round(estimateMin * (0.8 + rng() * 0.5))
+          : status === "In Progress" || status === "In Review"
+            ? Math.round(estimateMin * (0.15 + rng() * 0.6))
+            : status === "Blocked"
+              ? Math.round(estimateMin * rng() * 0.3)
+              : null;
+
     const issue: GenIssue = {
       key: nextKey(),
       type,
@@ -277,7 +313,7 @@ function genProject(
       priority: pickPriority(rng, type, cfg.scenario),
       assignee,
       reporter,
-      points: cfg.withStoryPoints && (type === "story" || type === "task") ? pick(rng, [1, 2, 3, 5, 8, 13]) : null,
+      points,
       labels: cfg.withLabels ? sample(rng, d.labels, bell(rng, 0, 3)) : [],
       epicKey: epic?.key ?? null,
       epicTitle: epic?.title ?? null,
@@ -287,7 +323,25 @@ function genProject(
           ? pickWeighted(rng, sprints.map((s) => [s.name, s.state === "closed" ? 30 : s.state === "active" ? 55 : 15] as [string, number]))
           : null,
       comments: [],
-      linkedKeys: [],
+      links: [],
+      fixVersions:
+        chance(rng, 0.45)
+          ? [
+              done
+                ? pickWeighted(rng, versions.map((v) => [v.name, v.released ? 70 : 30] as [string, number]))
+                : pickWeighted(rng, versions.map((v) => [v.name, v.released ? 15 : 85] as [string, number])),
+            ]
+          : [],
+      components: chance(rng, 0.55) ? sample(rng, components, bell(rng, 1, 2)) : [],
+      dueDate: chance(rng, done ? 0.15 : 0.3) ? new Date(createdAt.getTime() + rng() * 6 * 7 * 86400000) : null,
+      estimateMin,
+      spentMin,
+      watchers: bell(rng, 0, 7),
+      votes: type === "bug" ? bell(rng, 0, 6) : bell(rng, 0, 2),
+      attachments:
+        (type === "bug" && chance(rng, 0.45)) || (type !== "bug" && chance(rng, 0.12))
+          ? Array.from({ length: bell(rng, 1, 3) }, () => ({ filename: attachmentName(rng, d), sizeKb: bell(rng, 40, 4200) }))
+          : [],
       createdAt,
       resolvedAt,
     };
@@ -303,14 +357,29 @@ function genProject(
     issues.push(issue);
   }
 
-  // Issue links
+  // Typed issue links
   if (cfg.withLinks && issues.length > 6) {
-    const linkN = Math.floor(issues.length * 0.25);
+    const linkN = Math.floor(issues.length * 0.3);
     for (let i = 0; i < linkN; i++) {
       const a = pick(rng, issues);
       const b = pick(rng, issues);
-      if (a.key !== b.key && a.linkedKeys.length < 3 && !a.linkedKeys.includes(b.key)) {
-        a.linkedKeys.push(b.key);
+      if (a.key === b.key || a.links.length >= 3 || a.links.some((l) => l.key === b.key)) continue;
+      const lt = pickWeighted(rng, [
+        ["relates to", 40],
+        ["blocks", a.type === "bug" || b.type === "bug" ? 22 : 12],
+        ["duplicates", a.type === "bug" && b.type === "bug" ? 18 : 2],
+        ["clones", 8],
+      ] as const);
+      a.links.push({ type: lt, key: b.key });
+      // reciprocal link on the other side keeps the graph coherent
+      const reciprocal: Record<string, "is blocked by" | "relates to" | "is duplicated by" | "is cloned by"> = {
+        blocks: "is blocked by",
+        "relates to": "relates to",
+        duplicates: "is duplicated by",
+        clones: "is cloned by",
+      };
+      if (b.links.length < 3 && !b.links.some((l) => l.key === a.key)) {
+        b.links.push({ type: reciprocal[lt], key: a.key });
       }
     }
   }
@@ -322,6 +391,8 @@ function genProject(
     description: `${name} — ${d.blurb}. Generated for sandbox/UAT use.`,
     epics,
     sprints,
+    versions,
+    components,
     issues: issues.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
   };
 }
@@ -397,6 +468,22 @@ export function datasetStats(ds: Dataset) {
   const sortedDays = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b));
   for (const [date, v] of sortedDays) byDay.push({ date: date.slice(5), ...v });
 
+  // Sprint velocity: committed vs completed story points
+  const velMap = new Map<string, { committed: number; completed: number }>();
+  for (const p of ds.projects) {
+    for (const s of p.sprints) velMap.set(s.name, { committed: 0, completed: 0 });
+    for (const is of p.issues) {
+      if (!is.sprint || is.points == null) continue;
+      const v = velMap.get(is.sprint);
+      if (!v) continue;
+      v.committed += is.points;
+      if (is.status === "Done") v.completed += is.points;
+    }
+  }
+  const velocity = [...velMap.entries()]
+    .map(([name, v]) => ({ name: name.replace(/^\w+ /, ""), full: name, ...v }))
+    .filter((v) => v.committed > 0);
+
   return {
     issues,
     comments,
@@ -404,6 +491,7 @@ export function datasetStats(ds: Dataset) {
     byStatus,
     byDay,
     workload: [...workload.values()].sort((a, b) => b.open + b.done - (a.open + a.done)),
+    velocity,
     epics: ds.projects.reduce((s, p) => s + p.epics.length, 0),
     statusOrder: STATUS_ORDER,
   };

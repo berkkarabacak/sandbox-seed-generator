@@ -122,6 +122,7 @@ function seedFooter(issue: GenIssue): string {
 
 export interface LiveResult {
   projectKeys: string[];
+  issueKeys: string[];
   issuesCreated: number;
   commentsCreated: number;
   linksCreated: number;
@@ -138,7 +139,7 @@ export async function livePush(
   shouldStop: () => boolean,
   onStep: (i: number) => void = () => {},
 ): Promise<LiveResult> {
-  const result: LiveResult = { projectKeys: [], issuesCreated: 0, commentsCreated: 0, linksCreated: 0, aborted: false };
+  const result: LiveResult = { projectKeys: [], issueKeys: [], issuesCreated: 0, commentsCreated: 0, linksCreated: 0, aborted: false };
 
   // 1 ── auth
   onStep(0);
@@ -197,6 +198,19 @@ export async function livePush(
       log("warn", "  ! no agile board found — sprints recorded in seed metadata only");
     }
 
+    // 3b ── components & versions (best effort)
+    for (const c of project.components) {
+      const r = await jiraFetch(conn, "POST", "/rest/api/3/component", { name: c, project: project.key });
+      if (!r.ok && r.status !== 400) log("warn", `  ! component "${c}" skipped (${r.status})`);
+      await sleep(40);
+    }
+    for (const v of project.versions) {
+      const r = await jiraFetch(conn, "POST", "/rest/api/3/version", { name: v.name, project: project.key, released: v.released });
+      log(r.ok ? "ok" : "warn", r.ok ? `  ✓ version ${v.name}${v.released ? " (released)" : ""}` : `  ! version ${v.name} skipped (${r.status})`);
+      await sleep(40);
+    }
+    if (project.components.length) log("ok", `  ✓ ${project.components.length} components created`);
+
     // 4 ── assignable users (round-robin real users when the sandbox has them)
     const assignables = await jiraFetch<{ accountId: string; displayName: string }[]>(
       conn, "GET", `/rest/api/3/user/assignable/search?project=${project.key}&maxResults=50`,
@@ -249,6 +263,8 @@ export async function livePush(
       if (i.type === "subtask" && i.parentKey && keyMap.has(i.parentKey)) {
         fields.parent = { key: keyMap.get(i.parentKey) };
       }
+      if (i.fixVersions.length) fields.fixVersions = i.fixVersions.map((name) => ({ name }));
+      if (i.components.length) fields.components = i.components.map((name) => ({ name }));
       if (realUsers.length && i.assignee) {
         fields.assignee = { accountId: realUsers[idx % realUsers.length].accountId };
       }
@@ -312,23 +328,32 @@ export async function livePush(
     }
     log("ok", `  ✓ ${result.commentsCreated} comments posted in ${project.key}`);
 
-    // 8 ── issue links
+    // 8 ── typed issue links (skip reciprocal halves; the forward link creates both sides)
+    const LINK_DEF: Record<string, { name: string }> = {
+      "relates to": { name: "Relates" },
+      blocks: { name: "Blocks" },
+      duplicates: { name: "Duplicate" },
+      clones: { name: "Cloners" },
+    };
     for (const issue of project.issues) {
       const from = keyMap.get(issue.key);
       if (!from) continue;
-      for (const lk of issue.linkedKeys.slice(0, 2)) {
-        const to = keyMap.get(lk);
-        if (!to) continue;
+      for (const link of issue.links.slice(0, 3)) {
+        const def = LINK_DEF[link.type];
+        const to = keyMap.get(link.key);
+        if (!def || !to) continue; // reciprocal halves ("is blocked by"…) are implicit
         const r = await jiraFetch(conn, "POST", "/rest/api/3/issueLink", {
-          type: { name: "Relates" },
-          inwardIssue: { key: from },
-          outwardIssue: { key: to },
+          type: { name: def.name },
+          outwardIssue: { key: from },
+          inwardIssue: { key: to },
         });
         if (r.ok || r.status === 201) result.linksCreated++;
         await sleep(40);
       }
     }
     if (result.linksCreated) log("ok", `  ✓ ${result.linksCreated} issue links created`);
+
+    result.issueKeys.push(...keyMap.values());
   }
 
   onStep(5);
