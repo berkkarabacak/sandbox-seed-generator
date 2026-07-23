@@ -68,26 +68,31 @@ export async function cleanupPush(
   log("info", `$ seedling cleanup --site ${record.site} --push ${record.id}`);
   log("warn", `This will permanently delete ${record.projectKeys.length} project(s) or ${record.issueKeys.length} issue(s).`);
 
-  let projectDeleteWorked = false;
+  const fallbackProjects: string[] = [];
   for (const key of record.projectKeys) {
     if (shouldStop()) break;
     log("info", `DELETE /rest/api/3/project/${key}`);
     const status = await delFn(conn, `/rest/api/3/project/${key}`);
     if (status === 204 || status === 202 || status === 200) {
       res.projectsDeleted++;
-      projectDeleteWorked = true;
       log("ok", `  ✓ project ${key} deleted`);
     } else if (status === 404) {
       log("warn", `  ! project ${key} already gone (404)`);
-      projectDeleteWorked = true; // nothing left to clean
     } else {
       log("warn", `  ! project ${key}: HTTP ${status} — falling back to per-issue deletion`);
+      fallbackProjects.push(key);
     }
     await sleep(120);
   }
 
-  if (!projectDeleteWorked) {
-    for (const key of record.issueKeys) {
+  // Per-project fallback: only delete issues belonging to projects whose
+  // project-level delete failed (or all issues when no projects were pushed).
+  const fallbackKeys =
+    record.projectKeys.length === 0
+      ? record.issueKeys
+      : record.issueKeys.filter((k) => fallbackProjects.some((p) => k.startsWith(`${p}-`)));
+  if (fallbackKeys.length > 0) {
+    for (const key of fallbackKeys) {
       if (shouldStop()) break;
       const status = await delFn(conn, `/rest/api/3/issue/${key}?deleteSubtasks=true`);
       if (status === 204 || status === 200) {

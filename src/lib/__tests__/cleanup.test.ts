@@ -62,20 +62,22 @@ describe("cleanupPush orchestration", () => {
     expect(res).toEqual({ issuesDeleted: 0, projectsDeleted: 0, failed: 0 });
   });
 
-  it("mixed projects: once any project delete works, no per-issue fallback for the rest", async () => {
-    // Documents current behavior: projectDeleteWorked is a global flag — AAA's
-    // success suppresses the issue-level fallback for BBB's 403.
+  it("mixed projects: fallback is per-project — only the failed project's issues are deleted", async () => {
+    // AAA deletes cleanly; BBB gets 403 → per-issue fallback applies to BBB's
+    // issues only (AAA's issues are gone with the project).
     const rec = record({
       projectKeys: ["AAA", "BBB"],
-      issueKeys: ["BBB-1", "BBB-2"],
+      issueKeys: ["AAA-1", "BBB-1", "BBB-2"],
     });
     const { calls, delFn } = fakeDel({
       [projectPath("AAA")]: 204,
       [projectPath("BBB")]: 403,
+      [issuePath("BBB-1")]: 204,
+      [issuePath("BBB-2")]: 204,
     });
     const res = await cleanupPush(CONN, rec, noopLog, () => false, delFn);
-    expect(calls).toEqual([projectPath("AAA"), projectPath("BBB")]);
-    expect(res).toEqual({ issuesDeleted: 0, projectsDeleted: 1, failed: 0 });
+    expect(calls).toEqual([projectPath("AAA"), projectPath("BBB"), issuePath("BBB-1"), issuePath("BBB-2")]);
+    expect(res).toEqual({ issuesDeleted: 2, projectsDeleted: 1, failed: 0 });
   });
 
   it("shouldStop() aborts per-issue deletion", async () => {
