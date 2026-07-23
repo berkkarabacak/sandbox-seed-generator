@@ -3,6 +3,8 @@ import type { LiveLog } from "./jiraClient";
 import type { PushRecord } from "./recipes";
 
 // Deletion goes through the same local proxy as live push.
+export type DelFn = (conn: JiraConnection, path: string) => Promise<number>;
+
 async function del(conn: JiraConnection, path: string): Promise<number> {
   const resp = await fetch(`/jira${path}`, {
     method: "DELETE",
@@ -14,6 +16,31 @@ async function del(conn: JiraConnection, path: string): Promise<number> {
     },
   });
   return resp.status;
+}
+
+export interface GetResp<T = unknown> {
+  ok: boolean;
+  status: number;
+  json: T;
+}
+
+export async function jiraGet<T = unknown>(conn: JiraConnection, path: string): Promise<GetResp<T>> {
+  const resp = await fetch(`/jira${path}`, {
+    headers: {
+      "content-type": "application/json",
+      "x-jira-site": conn.site.trim().toLowerCase(),
+      "x-jira-email": conn.email.trim(),
+      "x-jira-token": conn.token.trim(),
+    },
+  });
+  const text = await resp.text();
+  let json: unknown = {};
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = { raw: text.slice(0, 300) };
+  }
+  return { ok: resp.ok, status: resp.status, json: json as T };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -34,6 +61,7 @@ export async function cleanupPush(
   record: PushRecord,
   log: LiveLog,
   shouldStop: () => boolean,
+  delFn: DelFn = del,
 ): Promise<CleanupResult> {
   const res: CleanupResult = { issuesDeleted: 0, projectsDeleted: 0, failed: 0 };
 
@@ -44,7 +72,7 @@ export async function cleanupPush(
   for (const key of record.projectKeys) {
     if (shouldStop()) break;
     log("info", `DELETE /rest/api/3/project/${key}`);
-    const status = await del(conn, `/rest/api/3/project/${key}`);
+    const status = await delFn(conn, `/rest/api/3/project/${key}`);
     if (status === 204 || status === 202 || status === 200) {
       res.projectsDeleted++;
       projectDeleteWorked = true;
@@ -61,7 +89,7 @@ export async function cleanupPush(
   if (!projectDeleteWorked) {
     for (const key of record.issueKeys) {
       if (shouldStop()) break;
-      const status = await del(conn, `/rest/api/3/issue/${key}?deleteSubtasks=true`);
+      const status = await delFn(conn, `/rest/api/3/issue/${key}?deleteSubtasks=true`);
       if (status === 204 || status === 200) {
         res.issuesDeleted++;
         if (res.issuesDeleted % 25 === 0) log("info", `  … ${res.issuesDeleted} issues deleted`);

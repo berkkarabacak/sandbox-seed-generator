@@ -2,12 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, TerminalSquare, Trash2 } from "lucide-react";
 import type { JiraConnection, PushLogLine } from "@/types";
 import type { PushRecord } from "@/lib/recipes";
-import { cleanupPush } from "@/lib/cleanup";
+import { cleanupPush, jiraGet } from "@/lib/cleanup";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type Phase = "confirm" | "running" | "done";
+
+interface ProjectPreview {
+  state: "loading" | "gone" | "found" | "error";
+  issueCount: number;
+  capped: boolean;
+}
 
 const LEVEL_COLOR: Record<PushLogLine["level"], string> = {
   info: "text-slate-300",
@@ -36,13 +42,59 @@ export function CleanupDialog({
   // reset when a different push record is targeted (render-time adjust pattern)
   const recId = record?.id ?? null;
   const [prevRecId, setPrevRecId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Record<string, ProjectPreview>>({});
   if (recId !== prevRecId) {
     setPrevRecId(recId);
     if (record) {
       setPhase("confirm");
       setLog([]);
+      setPreview(
+        Object.fromEntries(
+          record.projectKeys.map((k) => [k, { state: "loading", issueCount: 0, capped: false } satisfies ProjectPreview]),
+        ),
+      );
     }
   }
+
+  // live-state preview: fetch current project/issue state during the confirm phase
+  useEffect(() => {
+    if (!record || phase !== "confirm") return;
+    let cancelled = false;
+    const recConn = { ...conn, site: record.site };
+    for (const key of record.projectKeys) {
+      void (async () => {
+        try {
+          const proj = await jiraGet(recConn, `/rest/api/3/project/${key}`);
+          if (cancelled) return;
+          if (proj.status === 404) {
+            setPreview((p) => ({ ...p, [key]: { state: "gone", issueCount: 0, capped: false } }));
+            return;
+          }
+          if (!proj.ok) {
+            setPreview((p) => ({ ...p, [key]: { state: "error", issueCount: 0, capped: false } }));
+            return;
+          }
+          const search = await jiraGet<{ issues?: unknown[] }>(
+            recConn,
+            `/rest/api/3/search/jql?jql=project%3D${key}&maxResults=100&fields=summary`,
+          );
+          if (cancelled) return;
+          if (!search.ok) {
+            setPreview((p) => ({ ...p, [key]: { state: "error", issueCount: 0, capped: false } }));
+            return;
+          }
+          const n = search.json.issues?.length ?? 0;
+          setPreview((p) => ({ ...p, [key]: { state: "found", issueCount: n, capped: n >= 100 } }));
+        } catch {
+          if (!cancelled) setPreview((p) => ({ ...p, [key]: { state: "error", issueCount: 0, capped: false } }));
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recId, phase]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -92,6 +144,35 @@ export function CleanupDialog({
                   Pushed {new Date(record.at).toLocaleString()}. Whole projects are deleted when your token has
                   admin rights; otherwise issues are removed one by one. This cannot be undone.
                 </p>
+              </div>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <div className="mb-1.5 font-mono2 text-[10px] uppercase tracking-wider text-muted-foreground">
+                Live state on {record.site}
+              </div>
+              <div className="space-y-1">
+                {record.projectKeys.map((key) => {
+                  const p = preview[key];
+                  return (
+                    <div key={key} className="flex items-center gap-2 font-mono2 text-[11px]">
+                      <span className="font-bold text-foreground/90">{key}</span>
+                      {!p || p.state === "loading" ? (
+                        <span className="flex items-center gap-1 text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          checking…
+                        </span>
+                      ) : p.state === "gone" ? (
+                        <span className="text-muted-foreground">already gone</span>
+                      ) : p.state === "found" ? (
+                        <span className="text-amber-300">
+                          {p.capped ? "100+" : p.issueCount} issue{p.issueCount === 1 && !p.capped ? "" : "s"} found
+                        </span>
+                      ) : (
+                        <span className="text-rose-300">could not check (permissions?)</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="flex justify-end gap-2">
