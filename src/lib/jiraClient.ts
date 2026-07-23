@@ -1,4 +1,16 @@
 import type { Dataset, GenIssue, JiraConnection } from "@/types";
+import { toAdfDoc } from "./adf";
+import {
+  buildIssueFields,
+  detectProjectStyle,
+  discoverFieldMap,
+  type FieldMap,
+  type IssuePayloadCtx,
+  type JiraFieldDef,
+  type JiraProjectMeta,
+} from "./jiraFields";
+
+export { toAdfDoc };
 
 /**
  * Live Jira Cloud client.
@@ -59,66 +71,11 @@ export function getMyself(conn: JiraConnection) {
   return jiraFetch<Myself>(conn, "GET", "/rest/api/3/myself");
 }
 
-// ─── ADF (Atlassian Document Format) helpers ─────────────────────────────────
-
-interface AdfNode {
-  type: string;
-  text?: string;
-  content?: AdfNode[];
-  attrs?: Record<string, unknown>;
-}
-
-function para(text: string): AdfNode {
-  return { type: "paragraph", content: text ? [{ type: "text", text }] : [] };
-}
-
-export function toAdfDoc(text: string): { type: "doc"; version: 1; content: AdfNode[] } {
-  const lines = text.split("\n");
-  const content: AdfNode[] = [];
-  let bullets: AdfNode[] = [];
-
-  const flushBullets = () => {
-    if (bullets.length) {
-      content.push({ type: "bulletList", content: bullets });
-      bullets = [];
-    }
-  };
-
-  for (const raw of lines) {
-    const line = raw.replace(/\*\*/g, "").replace(/`/g, "");
-    if (line.startsWith("- ")) {
-      bullets.push({ type: "listItem", content: [para(line.slice(2))] });
-    } else {
-      flushBullets();
-      content.push(para(line));
-    }
-  }
-  flushBullets();
-  return { type: "doc", version: 1, content };
-}
-
 // ─── Live push orchestration ──────────────────────────────────────────────────
 
 export type LiveLog = (level: "info" | "ok" | "warn" | "err", text: string) => void;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const ISSUETYPE_NAME: Record<string, string> = {
-  story: "Story",
-  task: "Task",
-  bug: "Bug",
-  subtask: "Sub-task",
-};
-
-function seedFooter(issue: GenIssue): string {
-  const bits: string[] = [];
-  if (issue.assignee) bits.push(`assignee: ${issue.assignee.name}`);
-  bits.push(`reporter: ${issue.reporter.name}`);
-  if (issue.points != null) bits.push(`points: ${issue.points}`);
-  if (issue.sprint) bits.push(`sprint: ${issue.sprint}`);
-  if (issue.epicTitle) bits.push(`epic: ${issue.epicTitle}`);
-  return `\n\n— seed metadata (${bits.join(" · ")})`;
-}
 
 export interface LiveResult {
   projectKeys: string[];
@@ -178,8 +135,19 @@ export async function livePush(
     result.projectKeys.push(project.key);
     log("ok", `  ✓ project ${project.key} "${project.name}" created`);
 
+    // 2b ── style & field discovery (team-managed vs company-managed)
+    const metaResp = await jiraFetch<JiraProjectMeta>(conn, "GET", `/rest/api/3/project/${project.key}`);
+    const style = metaResp.ok ? detectProjectStyle(metaResp.json) : "team-managed";
+    const fieldsResp = await jiraFetch<JiraFieldDef[]>(conn, "GET", "/rest/api/3/field");
+    const fieldMap: FieldMap = fieldsResp.ok ? discoverFieldMap(fieldsResp.json) : {};
+    log(
+      "info",
+      `  ↳ style: ${style} · fields: epic-link=${fieldMap.epicLink ?? "—"}, points=${fieldMap.storyPoints ?? "—"}, sprint=${fieldMap.sprint ?? "—"}`,
+    );
+
     // 3 ── sprints (best effort: needs a board)
     onStep(2);
+    const sprintIds = new Map<string, number>();
     let boardId: number | null = null;
     const boards = await jiraFetch<{ values: { id: number }[] }>(
       conn, "GET", `/rest/agile/1.0/board?projectKeyOrId=${project.key}`,
@@ -187,12 +155,17 @@ export async function livePush(
     if (boards.ok && boards.json.values?.length) {
       boardId = boards.json.values[0].id;
       for (const s of project.sprints) {
-        const sr = await jiraFetch(conn, "POST", "/rest/agile/1.0/sprint", {
+        const sr = await jiraFetch<{ id?: number }>(conn, "POST", "/rest/agile/1.0/sprint", {
           name: s.name,
           originBoardId: boardId,
           goal: s.goal,
         });
-        log(sr.ok ? "ok" : "warn", sr.ok ? `  ✓ sprint "${s.name}"` : `  ! sprint "${s.name}" skipped (${sr.status})`);
+        if (sr.ok) {
+          if (typeof sr.json.id === "number") sprintIds.set(s.name, sr.json.id);
+          log("ok", `  ✓ sprint "${s.name}"`);
+        } else {
+          log("warn", `  ! sprint "${s.name}" skipped (${sr.status})`);
+        }
       }
     } else if (project.sprints.length) {
       log("warn", "  ! no agile board found — sprints recorded in seed metadata only");
@@ -249,26 +222,16 @@ export async function livePush(
     const subs = project.issues.filter((i) => i.type === "subtask");
 
     const toPayload = (i: GenIssue, idx: number) => {
-      const fields: Record<string, unknown> = {
-        project: { key: project.key },
-        issuetype: { name: ISSUETYPE_NAME[i.type] },
-        summary: i.summary.slice(0, 254),
-        description: toAdfDoc(i.description + seedFooter(i)),
-        labels: i.labels.slice(0, 8),
+      const ctx: IssuePayloadCtx = {
+        projectKey: project.key,
+        style,
+        fieldMap,
+        epicRealKey: i.epicKey ? keyMap.get(i.epicKey) ?? null : null,
+        parentRealKey: i.parentKey ? keyMap.get(i.parentKey) ?? null : null,
+        sprintId: i.sprint ? sprintIds.get(i.sprint) ?? null : null,
+        assigneeAccountId: realUsers.length && i.assignee ? realUsers[idx % realUsers.length].accountId : null,
       };
-      // epic linkage via parent (team-managed + next-gen style)
-      if (i.epicKey && keyMap.has(i.epicKey)) {
-        fields.parent = { key: keyMap.get(i.epicKey) };
-      }
-      if (i.type === "subtask" && i.parentKey && keyMap.has(i.parentKey)) {
-        fields.parent = { key: keyMap.get(i.parentKey) };
-      }
-      if (i.fixVersions.length) fields.fixVersions = i.fixVersions.map((name) => ({ name }));
-      if (i.components.length) fields.components = i.components.map((name) => ({ name }));
-      if (realUsers.length && i.assignee) {
-        fields.assignee = { accountId: realUsers[idx % realUsers.length].accountId };
-      }
-      return { fields };
+      return { fields: buildIssueFields(i, ctx) };
     };
 
     let userIdx = 0;
