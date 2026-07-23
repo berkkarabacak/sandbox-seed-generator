@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Braces,
@@ -23,7 +23,9 @@ import { ConnectionCard } from "@/components/ConnectionCard";
 import { RecipePanel } from "@/components/RecipePanel";
 import { BoardView } from "@/components/BoardView";
 import { IssueTable } from "@/components/IssueTable";
-import { InsightsView } from "@/components/InsightsView";
+const InsightsView = lazy(() =>
+  import("@/components/InsightsView").then((m) => ({ default: m.InsightsView })),
+);
 import { TeamView } from "@/components/TeamView";
 import { ActivityView } from "@/components/ActivityView";
 import { IssueDetailDialog } from "@/components/IssueDetailDialog";
@@ -269,7 +271,15 @@ export default function App() {
                 <IssueTable project={project} onOpenIssue={setOpenIssue} />
               </TabsContent>
               <TabsContent value="insights" className="m-0 h-full data-[state=inactive]:hidden">
-                <InsightsView dataset={dataset} />
+                <Suspense
+                  fallback={
+                    <div className="flex h-full items-center justify-center font-mono2 text-xs text-muted-foreground">
+                      loading charts…
+                    </div>
+                  }
+                >
+                  <InsightsView dataset={dataset} />
+                </Suspense>
               </TabsContent>
               <TabsContent value="team" className="m-0 h-full data-[state=inactive]:hidden">
                 <TeamView dataset={dataset} />
