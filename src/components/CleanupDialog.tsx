@@ -33,13 +33,16 @@ export function CleanupDialog({
   const scrollRef = useRef<HTMLDivElement>(null);
   const t0 = useRef(0);
 
-  useEffect(() => {
+  // reset when a different push record is targeted (render-time adjust pattern)
+  const recId = record?.id ?? null;
+  const [prevRecId, setPrevRecId] = useState<string | null>(null);
+  if (recId !== prevRecId) {
+    setPrevRecId(recId);
     if (record) {
       setPhase("confirm");
       setLog([]);
-      stopRef.current = false;
     }
-  }, [record]);
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });

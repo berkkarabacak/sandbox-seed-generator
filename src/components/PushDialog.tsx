@@ -130,16 +130,21 @@ export function PushDialog({
   const site = useMemo(() => conn.site.trim().toLowerCase() || "your-team.atlassian.net", [conn.site]);
   const totalIssues = dataset.projects.reduce((s, p) => s + p.issues.length, 0);
 
-  // reset + probe proxy whenever the dialog opens
+  // reset state when the dialog opens (render-time adjust pattern);
+  // the async proxy probe stays in an effect
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setPhase("ready");
+      setLog([]);
+      setStepIdx(0);
+      setProgress(0);
+      setProxyUp(null);
+    }
+  }
   useEffect(() => {
-    if (!open) return;
-    setPhase("ready");
-    setLog([]);
-    setStepIdx(0);
-    setProgress(0);
-    stopRef.current = false;
-    setProxyUp(null);
-    probeProxy().then(setProxyUp);
+    if (open) probeProxy().then(setProxyUp);
   }, [open]);
 
   useEffect(() => {

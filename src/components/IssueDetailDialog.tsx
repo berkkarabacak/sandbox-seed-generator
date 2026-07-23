@@ -1,7 +1,16 @@
 import { Calendar, Eye, FileText, Link2, MessageSquare, Paperclip, ThumbsUp, Timer, User } from "lucide-react";
 import type { GenIssue } from "@/types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { IssueTypeIcon, LabelChip, PersonaAvatar, PriorityIcon, StatusChip, TYPE_LABEL } from "./jira";
+import { IssueTypeIcon, LabelChip, PersonaAvatar, PriorityIcon, StatusChip } from "./jira";
+import type { IssueType } from "@/types";
+
+const TYPE_LABEL: Record<IssueType, string> = {
+  bug: "Bug",
+  story: "Story",
+  task: "Task",
+  epic: "Epic",
+  subtask: "Sub-task",
+};
 
 function DescriptionBlock({ text }: { text: string }) {
   return (

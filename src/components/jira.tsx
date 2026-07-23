@@ -30,14 +30,6 @@ export function IssueTypeIcon({ type, className }: { type: IssueType; className?
   }
 }
 
-export const TYPE_LABEL: Record<IssueType, string> = {
-  bug: "Bug",
-  story: "Story",
-  task: "Task",
-  epic: "Epic",
-  subtask: "Sub-task",
-};
-
 // ─── Priority icon ────────────────────────────────────────────────────────────
 
 export function PriorityIcon({ priority, className }: { priority: IssuePriority; className?: string }) {

@@ -135,6 +135,7 @@ function makeComments(
   density: number,
   createdAt: Date,
   resolvedAt: Date | null,
+  nowMs: number,
 ): GenComment[] {
   if (density <= 0) return [];
   const maxN = Math.round((density / 100) * 6);
@@ -154,7 +155,7 @@ function makeComments(
     "Adding the regression-test case so this stays fixed.",
   ];
 
-  const end = resolvedAt ?? new Date();
+  const end = resolvedAt ?? new Date(nowMs);
   const span = Math.max(1, end.getTime() - createdAt.getTime());
   const comments: GenComment[] = [];
   for (let i = 0; i < n; i++) {
@@ -192,11 +193,12 @@ function genProject(
   d: DomainPack,
   people: Persona[],
   projectIdx: number,
+  nowMs: number,
 ): GenProject {
   const key = d.projectKeys[projectIdx % d.projectKeys.length];
   const name = d.projectNames[projectIdx % d.projectNames.length];
   const lead = people[projectIdx % people.length];
-  const now = Date.now();
+  const now = nowMs;
   const spreadMs = cfg.spreadWeeks * 7 * 24 * 3600 * 1000;
 
   // Sprints
@@ -346,7 +348,7 @@ function genProject(
       resolvedAt,
     };
 
-    issue.comments = makeComments(rng, d, people, cfg.commentDensity, createdAt, resolvedAt);
+    issue.comments = makeComments(rng, d, people, cfg.commentDensity, createdAt, resolvedAt, nowMs);
 
     if (epic) {
       const e = epics.find((x) => x.key === epic.key)!;
@@ -397,19 +399,19 @@ function genProject(
   };
 }
 
-export function generateDataset(cfg: SeedConfig): Dataset {
+export function generateDataset(cfg: SeedConfig, nowMs: number = Date.now()): Dataset {
   const rng = createRng(hashSeed(`${cfg.seed}:${cfg.domain}:${cfg.scenario}`));
   const d = DOMAINS[cfg.domain];
   const people = makePersonas(rng, cfg.teamSize);
   const projectIdx = shuffle(rng, [0, 1, 2, 3]);
   const projects: GenProject[] = [];
   for (let i = 0; i < cfg.projectCount; i++) {
-    projects.push(genProject(rng, cfg, d, people, projectIdx[i]));
+    projects.push(genProject(rng, cfg, d, people, projectIdx[i], nowMs));
   }
   return {
     projects,
     people,
-    generatedAt: new Date(),
+    generatedAt: new Date(nowMs),
     domain: cfg.domain,
     scenario: cfg.scenario,
   };
